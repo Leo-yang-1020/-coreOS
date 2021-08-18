@@ -285,7 +285,7 @@ volatile unsigned int pgfault_num=0;
  * @error_code : the error code recorded in trapframe->tf_err which is setted by x86 hardware
  * @addr       : the addr which causes a memory access exception, (the contents of the CR2 register)
  *
- * CALL GRAPH: trap--> trap_dispatch-->pgfault_handler-->do_pgfault
+ * CALL GRAPH: trap-> trap_dispatch-->pgfault_handler-->do_pgfault
  * The processor provides ucore's do_pgfault function with two items of information to aid in diagnosing
  * the exception and recovering from it.
  *   (1) The contents of the CR2 register. The processor loads the CR2 register with the
@@ -368,7 +368,7 @@ do_pgfault(struct mm_struct *mm, uint32_t error_code, uintptr_t addr) {
     /*LAB3 EXERCISE 1: YOUR CODE*/
     ptep = ???              //(1) try to find a pte, if pte's PT(Page Table) isn't existed, then create a PT.
     if (*ptep == 0) {
-                            //(2) if the phy addr isn't exist, then alloc a page & map the phy addr with logical addr
+        //(2) if the phy addr isn't exist, then alloc a page & map the phy addr with logical addr
 
     }
     else {
@@ -396,6 +396,43 @@ do_pgfault(struct mm_struct *mm, uint32_t error_code, uintptr_t addr) {
         }
    }
 #endif
+    // try to find a pte, if pte's PT(Page Table) isn't existed, then create a PT.
+    // (notice the 3th parameter '1')
+    if ((ptep = get_pte(mm->pgdir, addr, 1)) == NULL) {
+        cprintf("get_pte in do_pgfault failed\n");
+        goto failed;
+    }
+
+    if (*ptep == 0) { // if the phy addr isn't exist, then alloc a page & map the phy addr with logical addr
+        if (pgdir_alloc_page(mm->pgdir, addr, perm) == NULL) {
+            cprintf("pgdir_alloc_page in do_pgfault failed\n");
+            goto failed;
+        }
+    }
+    else { // if this pte is a swap entry, then load data from disk to a page with phy addr
+           // and call page_insert to map the phy addr with logical addr
+        if(swap_init_ok) {
+            struct Page *page=NULL;
+            if ((ret = swap_in(mm, addr, &page)) != 0) {
+                //根据页表项的高24位找到对应的扇区头并将其读入到内存页
+                cprintf("swap_in in do_pgfault failed\n");
+                goto failed;
+            }
+            page_insert(mm->pgdir, page, addr, perm);
+            //将从磁盘转入内存的页插入，使得页目录项可以找到：即将物理地址和逻辑地址映射
+            swap_map_swappable(mm,addr,page,1);
+            //当映射一个可交换的页到mm_struct结构时执行，用于记录也访问情况的相关属性
+            page->pra_vaddr = addr;
+            //该pra_vaddr用来记录此物理页对应的虚拟页的起始地址
+
+        }
+        else {
+            //磁盘没有初始化成功，无法进行换入换出操作
+            cprintf("no swap_init_ok but ptep is %x, failed\n",*ptep);
+            goto failed;
+        }
+
+   }
    ret = 0;
 failed:
     return ret;

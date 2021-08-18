@@ -9,6 +9,7 @@
 #include <sync.h>
 #include <error.h>
 
+
 /* *
  * Task State Segment:
  *
@@ -368,6 +369,40 @@ get_pte(pde_t *pgdir, uintptr_t la, bool create) {
      *   PTE_W           0x002                   // page table/directory entry flags bit : Writeable
      *   PTE_U           0x004                   // page table/directory entry flags bit : User can access
      */
+    pde_t *pde=&pgdir[PDX(la)];
+    if(!( * pde & PTE_P)) {
+        //如果页目录项不存在
+        if (create) {
+            //分配一个页给页表
+
+            struct Page *page=alloc_page();//分配一个页
+            if(page==NULL){
+                return 0;
+            }
+            set_page_ref(page,1);//表示该页已经被访问
+
+            uintptr_t pa=page2pa(page);//获取页的物理地址
+
+            memset(KADDR(pa),0,PGSIZE);//分配的页的虚拟地址的初始化
+
+            *pde = pa |PTE_U|PTE_W|PTE_P;
+            //要理解这步，就需要明白，刚刚分配的页还没有和页表项建立映射关系，这里将对应的页地址映射
+            //并且完善了页表项的标志位，到这里，新分配的页就正式映射到了对应的页表项
+
+        }
+        else{
+            return 0;//如果页目录项不存在且不能开辟，则返回0
+        }
+    }
+    /**
+     * 首先要确定PTE的起始地址: 通过在PDE的页目录项，先取得页表项的起始地址：
+     * PDE_ADDR（输入一个页目录项，输出对应的物理地址） 转化
+     * 再通过KADDR转化，得到PTE的起始地址，
+     * 再根据之前得到的偏移（PTX(la)），就是二级页表项（PTE）的内核虚地址。
+     */
+    return &((pte_t *)KADDR(PDE_ADDR(*pde)))[PTX(la)];
+
+
 #if 0
     pde_t *pdep = NULL;   // (1) find page directory entry
     if (0) {              // (2) check if entry is not present
@@ -416,6 +451,21 @@ page_remove_pte(pde_t *pgdir, uintptr_t la, pte_t *ptep) {
      * DEFINEs:
      *   PTE_P           0x001                   // page table/directory entry flags bit : Present
      */
+    if(*ptep & PTE_P){
+        struct Page *page=pte2page(*ptep);//ptep代表页表项的物理地址,找到其对应的页
+        page_ref_dec(page);//引用次数减1
+        if(page->ref==0){//如果引用次数为0了，说明页不存在于任何页表项，可以释放
+            free_page(page);//释放页面
+        }
+        *ptep=0;//清除对应关系
+        tlb_invalidate(pgdir,la);
+        //tlb表在页释放后，如果该页存在于tlb表，需要被更新释放
+    }
+    else{
+        return ;
+    }
+
+
 #if 0
     if (0) {                      //(1) check if this page table entry is present
         struct Page *page = NULL; //(2) find corresponding page to pte
@@ -424,6 +474,7 @@ page_remove_pte(pde_t *pgdir, uintptr_t la, pte_t *ptep) {
                                   //(5) clear second page table entry
                                   //(6) flush tlb
     }
+
 #endif
 }
 

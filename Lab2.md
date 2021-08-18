@@ -59,60 +59,7 @@ struct Page {
 
 实现First fit，完成default_init,default_init_memmap,default_alloc_pages, default_free_pages函数的重写
 
-```c
-/* In the first fit algorithm, the allocator keeps a list of free blocks (known as the free list) and,
-   on receiving a request for memory, scans along the list for the first block that is large enough to
-   satisfy the request. If the chosen block is significantly larger than that requested, then it is 
-   usually split, and the remainder added to the list as another free block.
-   Please see Page 196~198, Section 8.2 of Yan Wei Ming's chinese book "Data Structure -- C programming language"
-*/
-// LAB2 EXERCISE 1: YOUR CODE
-// you should rewrite functions: default_init,default_init_memmap,default_alloc_pages, default_free_pages.
-/*
- * Details of FFMA
- * (1) Prepare: In order to implement the First-Fit Mem Alloc (FFMA), we should manage the free mem block use some list.
- *              The struct free_area_t is used for the management of free mem blocks. At first you should
- *              be familiar to the struct list in list.h. struct list is a simple doubly linked list implementation.
- *              You should know howto USE: list_init, list_add(list_add_after), list_add_before, list_del, list_next, list_prev
- *              Another tricky method is to transform a general list struct to a special struct (such as struct page):
- *              you can find some MACRO: le2page (in memlayout.h), (in future labs: le2vma (in vmm.h), le2proc (in proc.h),etc.)
- * (2) default_init: you can reuse the  demo default_init fun to init the free_list and set nr_free to 0.
- *              free_list is used to record the free mem blocks. nr_free is the total number for free mem blocks.
- * (3) default_init_memmap:  CALL GRAPH: kern_init --> pmm_init-->page_init-->init_memmap--> pmm_manager->init_memmap
- *              This fun is used to init a free block (with parameter: addr_base, page_number).
- *              First you should init
-(in memlayout.h) in this free block, include:
- *                  p->flags should be set bit PG_property (means this page is valid. In pmm_init fun (in pmm.c),
- *                  the bit PG_reserved is setted in p->flags)
- *                  if this page  is free and is not the first page of free block, p->property should be set to 0.
- *                  if this page  is free and is the first page of free block, p->property should be set to total num of block.
- *                  p->ref should be 0, because now p is free and no reference.
- *                  We can use p->page_link to link this page to free_list, (such as: list_add_before(&free_list, &(p->page_link)); )
- *              Finally, we should sum the number of free mem block: nr_free+=n
- * (4) default_alloc_pages: search find a first free block (block size >=n) in free list and reszie the free block, return the addr
- *              of malloced block.
- *              (4.1) So you should search freelist like this:
- *                       list_entry_t le = &free_list;
- *                       while((le=list_next(le)) != &free_list) {
- *                       ....
- *                 (4.1.1) In while loop, get the struct page and check the p->property (record the num of free block) >=n?
- *                       struct Page *p = le2page(le, page_link);
- *                       if(p->property >= n){ ...
- *                 (4.1.2) If we find this p, then it' means we find a free block(block size >=n), and the first n pages can be malloced.
- *                     Some flag bits of this page should be setted: PG_reserved =1, PG_property =0
- *                     unlink the pages from free_list
- *                     (4.1.2.1) If (p->property >n), we should re-caluclate number of the the rest of this free block,
- *                           (such as: le2page(le,page_link))->property = p->property - n;)
- *                 (4.1.3)  re-caluclate nr_free (number of the the rest of all free block)
- *                 (4.1.4)  return p
- *               (4.2) If we can not find a free block (block size >=n), then return NULL
- * (5) default_free_pages: relink the pages into  free list, maybe merge small free blocks into big free blocks.
- *               (5.1) according the base addr of withdrawed blocks, search free list, find the correct position
- *                     (from low to high addr), and insert the pages. (may use list_next, le2page, list_add_before)
- *               (5.2) reset the fields of pages, such as p->ref, p->flags (PageProperty)
- *               (5.3) try to merge low addr or high addr blocks. Notice: should change some pages's p->property correctly.
- */
-```
+
 
 一些关键，不可忽略的数据结构：
 
@@ -206,7 +153,99 @@ default_alloc_pages函数：负责分配第一个大小的块，分配的策略�
 
 找到第一个符合的块后，将其从free_list中删除，但是页本身是紧邻在一起的，只是free_list发生了变化而已。
 
-default_free_pages函数：负责释放并紧凑(compaction)
+```c
+static struct Page *
+default_alloc_pages(size_t n) {
+    assert(n > 0);
+    if (n > nr_free) {
+        return NULL;
+    }
+    struct Page *page = NULL;
+    list_entry_t *le = &free_list;
+
+    while ((le = list_next(le)) != &free_list) {
+        struct Page *p = le2page(le, page_link);
+        if (p->property >= n) {
+            //找到了合适大小的块，可以进行分配
+            struct Page *curPage=p;
+            for(;curPage<p+n;curPage++){
+                //遍历所有需要分配的PAGE 修改其相应属性为已经分配 并将其移除freelist
+                ClearPageProperty(curPage);
+                SetPageReserved(curPage);
+                list_del(&(curPage->page_link));
+            }
+            if(p->property>n){
+                //如果分配后还存在外碎片，需要将外碎片数量更新为原大小减去分配量
+                curPage->property=p->property-n;
+            }
+            nr_free-=n;//记得更新剩余页数量
+            return p;
+        }
+    }
+
+    return NULL;
+}
+```
+
+
+
+default_free_pages函数：负责释放并紧凑(compaction)。
+
+```c
+static void
+default_free_pages(struct Page *base, size_t n) {
+    assert(n > 0);
+    assert(PageReserved(base));
+    struct Page *p ;
+    list_entry_t *le = &free_list;
+     while((le=list_next(le))!=&free_list){
+         //理解这段代码：由于块已经分配出去，因此块没有被串在链表中，我们需要找到正确插入链表的位置，而page结构数组是不会改变的
+         //要找到正确的插入位置，就需要找到链表中第一个在base前的page，然后就可以对要释放的块使用头插法：list_add_before()以此插入即可
+         p=le2page(le,page_link);
+         if(p>base){
+             break;
+         }
+     }
+     for(p=base;p<base+n;p++){
+         ClearPageReserved(p);//移除保留状态
+         set_page_ref(p,0);//设置引用数为0
+         list_add_before(le,&p->page_link);//加入链表
+     }
+    SetPageProperty(base);//一个块的头页面需要设置property
+    base->property=n;
+    p=le2page(le,page_link);
+
+    //除了加入空闲链表之外，还需要合并上方和下方的块
+    if(p==base+n){
+        //下方的块合并较为简单，判断链表的下一个页是否正好是相邻的页，如果是，则直接将property加入到base页，然后清空该页的property
+        base->property+=p->property;
+        p->property=0;
+        ClearPageProperty(p);
+    }
+
+    //合并上方也不复杂，需要找到上方第一个空闲块并将base 的property赋给该块
+    le=list_prev(&base->page_link);
+    p=le2page(le,page_link);
+    if(p==base-1){
+        //链表的上一个块必须要和当前页连续才能合并
+        while(le!=&free_list){
+            p=le2page(le,page_link);
+            if(p->property!=0){
+                p->property+=base->property;
+                base->property=0;
+                ClearPageProperty(base);
+                break;
+            }
+            le=list_prev(le);
+        }
+    }
+    nr_free+=n;
+    return;
+
+}
+```
+
+
 
 先说说释放的方法：
 
@@ -217,6 +256,18 @@ default_free_pages函数：负责释放并紧凑(compaction)
 关于紧凑的方法：对于base+n之后的地址，即free_list下一个，直接修改其长度为0，然后把其加到base上。
 
 对于base之前的地址，需要去探查free_list，直到找到property不为0的那一页（说明是上一块），然后把base的值加在该页，而base的property清0。
+
+
+
+最后，使用make qemu测试正确性。
+
+**思考：如何表示一个可能有多个页的块？为何引入free_list?**
+
+Linux下的compound page（buddysystem算法中表示多个页构成的一个块）这里也是这样，我们不需要引入新的结构体便可以表示一个块。我们只需要在块的头的property设置为块中含有页的数量即可，节省空间。
+
+这里使用的page结构数组用于表示整体的内存情况，即所有的内存分配在被探测后以页的形式存储，页是内存分配的最小粒度（后面可以有slub算法更加细分）。
+
+引入free_list更多的是为了分配效率考虑：在分配时，我们只需要查看空闲的块即可，如果没有该结构，每一次分配都要在整个内存中查找，非常浪费时间。
 
 ### 练习2
 
@@ -281,49 +332,70 @@ get_pte(Page table entry)，即获取页表项
   代码：
 
   ```c
-  pde_t *pdep=&pgdir[PDX(la)];
-      if(!(pdep&PTE_P)){
-      	if(create==1){
-      		struct Page *page=alloc_page();
-      		if(page==NULL){
-      			return NULL;
-      		}
-      		set_page_ref(page,1);//设置为已访问
-      		uintptr_t pa=page2pa(page);//获当前页面的内存管理地址，便于后续memset操作
-      		memset(KADDR(pa),0,PGSIZE);//memset对刚分配的页初始化
-      		*pdep = pa | PTE_U | PTE_W | PTE_P; //添加页表项内容
-      	}else{
-      		return NULL;//create为0，直接返回null
-      	}
-      }
-      //根据pde访问pte
-      return &((pte_t *)KADDR(PDE_ADDR(*pdep)))[PTX(la)];
-  ```
-
+  pde_t *pde=&pgdir[PDX(la)];
+      if(!(*pde & PTE_P)) {
+          //如果页目录项不存在
+          if (create) {
+              //分配一个页给页表
   
-
+              struct Page *page=alloc_page();//分配一个页
+              if(page==NULL){
+                  return 0;
+              }
+              set_page_ref(page,1);//表示该页已经被访问
+  
+              uintptr_t pa=page2pa(page);//获取页的物理地址
+  
+              memset(KADDR(pa),0,PGSIZE);//分配的页的虚拟地址的初始化
+  
+              *pde = pa |PTE_U|PTE_W|PTE_P;
+              //要理解这步，就需要明白，刚刚分配的页还没有和页表项建立映射关系，这里将对应的页地址映射
+              //并且完善了页表项的标志位，到这里，新分配的页就正式映射到了对应的页表项
+  
+          }
+          else{
+              return 0;//如果页目录项不存在且不能开辟，则返回0
+          }
+      }
+      /**
+       * 首先要确定PTE的起始地址: 通过在PDE的页目录项，先取得页表项的起始地址：
+       * PDE_ADDR（输入一个页目录项，输出对应的物理地址） 转化
+       * 再通过KADDR转化，得到PTE的起始地址，
+       * 再根据之前得到的偏移（PTX(la)），就是二级页表项（PTE）的内核虚地址。
+       */
+      return &((pte_t *)KADDR(PDE_ADDR(*pde)))[PTX(la)];
+  ```
+  
+  
+  
   最核心的一行代码分析：
-
+  
   ```c
   &((pte_t *)KADDR(PDE_ADDR(*pdep)))[PTX(la)];
   ```
-
-  首先要确定PTE的起始地址: 通过在PDE的页表项，先取得页表项的起始地址-> PDE_ADDR转化再通过KADDR转化，得到PTE的起始地址，再加上之前得到的偏移（PTX(la)），就是二级页表项（PTE）的内核虚地址。
-
+  
+  首先要确定PTE的起始地址: 通过在PDE的页目录项，先取得页表项的起始地址：PDE_ADDR（输入一个页目录项，输出对应的） 转化  再通过KADDR转化，得到PTE的起始地址，再加上之前得到的偏移（PTX(la)），就是二级页表项（PTE）的内核虚地址。
+  
+  
+  
   关于最后的两个思考题：
-
+  
   PTE和PDE的结构以及其属性含义：
-
+  
+  页目录项和页表项，一个OS可以有多个页表，但只能有一个页目录（相当于是多级页表可以存在）
+  
   参考博客：OS内存空间的管理
-
+  
   出现页访问异常后，硬件要干的事情：其实这个流程和一般的中断异常处理非常地类似
-
+  
   - 发现缺页中断，属于内中断，能够在中断向量表(IDT)中找到响应的中断门
   - 根据中断门中的选择子，可以找到其在段描述符表的段描述符
   - 段描述符的base+idt中的offset得到中断服务例程的线性地址
   - 将当前寄存器信息压栈保存，转向执行中断服务例程（缺页处理）
   - 在外存中查找页面，将找到的内存换入到物理内存中并修改页表
   - 最后重新执行导致异常的指令
+  
+  
 
 ### 练习3
 
@@ -352,12 +424,17 @@ page_remove_pte(pde_t *pgdir, uintptr_t la, pte_t *ptep)
 
 ```c
 if(*ptep & PTE_P){
-    	struct Page *page=pte2page (*ptep);
-    	if(page_ref_dec()==0){
-    		free_page(ptep);
-    	}
-    	*ptep=0;
-    	tlb_invalidate(pgdir,la);
+        struct Page *page=pte2page(*ptep);//ptep代表页表项的物理地址,找到其对应的页
+        page_ref_dec(page);//引用次数减1
+        if(page->ref==0){//如果引用次数为0了，说明页不存在于任何页表项，可以释放
+            free_page(page);//释放页面
+        }
+        *ptep=0;//清除对应关系
+        tlb_invalidate(pgdir,la);
+        //tlb表在页释放后，如果该页存在于tlb表，需要被更新释放
+    }
+    else{
+        return ;
     }
 ```
 
