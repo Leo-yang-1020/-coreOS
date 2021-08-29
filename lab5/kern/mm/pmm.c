@@ -60,8 +60,8 @@ const struct pmm_manager *pmm_manager;
  * always available at virtual address PGADDR(PDX(VPT), PDX(VPT), 0), to which
  * vpd is set bellow.
  * */
-pte_t * const vpt = (pte_t *)VPT;
-pde_t * const vpd = (pde_t *)PGADDR(PDX(VPT), PDX(VPT), 0);
+pte_t *const vpt = (pte_t *) VPT;
+pde_t *const vpd = (pde_t *) PGADDR(PDX(VPT), PDX(VPT), 0);
 
 /* *
  * Global Descriptor Table:
@@ -77,20 +77,22 @@ pde_t * const vpd = (pde_t *)PGADDR(PDX(VPT), PDX(VPT), 0);
  *   - 0x28:  defined for tss, initialized in gdt_init
  * */
 static struct segdesc gdt[] = {
-    SEG_NULL,
-    [SEG_KTEXT] = SEG(STA_X | STA_R, 0x0, 0xFFFFFFFF, DPL_KERNEL),
-    [SEG_KDATA] = SEG(STA_W, 0x0, 0xFFFFFFFF, DPL_KERNEL),
-    [SEG_UTEXT] = SEG(STA_X | STA_R, 0x0, 0xFFFFFFFF, DPL_USER),
-    [SEG_UDATA] = SEG(STA_W, 0x0, 0xFFFFFFFF, DPL_USER),
-    [SEG_TSS]   = SEG_NULL,
+        SEG_NULL,
+        [SEG_KTEXT] = SEG(STA_X | STA_R, 0x0, 0xFFFFFFFF, DPL_KERNEL),
+        [SEG_KDATA] = SEG(STA_W, 0x0, 0xFFFFFFFF, DPL_KERNEL),
+        [SEG_UTEXT] = SEG(STA_X | STA_R, 0x0, 0xFFFFFFFF, DPL_USER),
+        [SEG_UDATA] = SEG(STA_W, 0x0, 0xFFFFFFFF, DPL_USER),
+        [SEG_TSS]   = SEG_NULL,
 };
 
 static struct pseudodesc gdt_pd = {
-    sizeof(gdt) - 1, (uintptr_t)gdt
+        sizeof(gdt) - 1, (uintptr_t) gdt
 };
 
 static void check_alloc_page(void);
+
 static void check_pgdir(void);
+
 static void check_boot_pgdir(void);
 
 /* *
@@ -99,14 +101,14 @@ static void check_boot_pgdir(void);
  * */
 static inline void
 lgdt(struct pseudodesc *pd) {
-    asm volatile ("lgdt (%0)" :: "r" (pd));
-    asm volatile ("movw %%ax, %%gs" :: "a" (USER_DS));
-    asm volatile ("movw %%ax, %%fs" :: "a" (USER_DS));
-    asm volatile ("movw %%ax, %%es" :: "a" (KERNEL_DS));
-    asm volatile ("movw %%ax, %%ds" :: "a" (KERNEL_DS));
-    asm volatile ("movw %%ax, %%ss" :: "a" (KERNEL_DS));
+    asm volatile ("lgdt (%0)"::"r" (pd));
+    asm volatile ("movw %%ax, %%gs"::"a" (USER_DS));
+    asm volatile ("movw %%ax, %%fs"::"a" (USER_DS));
+    asm volatile ("movw %%ax, %%es"::"a" (KERNEL_DS));
+    asm volatile ("movw %%ax, %%ds"::"a" (KERNEL_DS));
+    asm volatile ("movw %%ax, %%ss"::"a" (KERNEL_DS));
     // reload cs
-    asm volatile ("ljmp %0, $1f\n 1:\n" :: "i" (KERNEL_CS));
+    asm volatile ("ljmp %0, $1f\n 1:\n"::"i" (KERNEL_CS));
 }
 
 /* *
@@ -123,11 +125,11 @@ load_esp0(uintptr_t esp0) {
 static void
 gdt_init(void) {
     // set boot kernel stack and default SS0
-    load_esp0((uintptr_t)bootstacktop);
+    load_esp0((uintptr_t) bootstacktop);
     ts.ts_ss0 = KERNEL_DS;
 
     // initialize the TSS filed of the gdt
-    gdt[SEG_TSS] = SEGTSS(STS_T32A, (uintptr_t)&ts, sizeof(ts), DPL_KERNEL);
+    gdt[SEG_TSS] = SEGTSS(STS_T32A, (uintptr_t) &ts, sizeof(ts), DPL_KERNEL);
 
     // reload all segment registers
     lgdt(&gdt_pd);
@@ -153,22 +155,21 @@ init_memmap(struct Page *base, size_t n) {
 //alloc_pages - call pmm->alloc_pages to allocate a continuous n*PAGESIZE memory 
 struct Page *
 alloc_pages(size_t n) {
-    struct Page *page=NULL;
+    struct Page *page = NULL;
     bool intr_flag;
-    
-    while (1)
-    {
-         local_intr_save(intr_flag);
-         {
-              page = pmm_manager->alloc_pages(n);
-         }
-         local_intr_restore(intr_flag);
 
-         if (page != NULL || n > 1 || swap_init_ok == 0) break;
-         
-         extern struct mm_struct *check_mm_struct;
-         //cprintf("page %x, call swap_out in alloc_pages %d\n",page, n);
-         swap_out(check_mm_struct, n, 0);
+    while (1) {
+        local_intr_save(intr_flag);
+        {
+            page = pmm_manager->alloc_pages(n);
+        }
+        local_intr_restore(intr_flag);
+
+        if (page != NULL || n > 1 || swap_init_ok == 0) break;
+
+        extern struct mm_struct *check_mm_struct;
+        //cprintf("page %x, call swap_out in alloc_pages %d\n",page, n);
+        swap_out(check_mm_struct, n, 0);
     }
     //cprintf("n %d,get page %x, No %d in alloc_pages\n",n,page,(page-pages));
     return page;
@@ -202,12 +203,12 @@ nr_free_pages(void) {
 /* pmm_init - initialize the physical memory management */
 static void
 page_init(void) {
-    struct e820map *memmap = (struct e820map *)(0x8000 + KERNBASE);
+    struct e820map *memmap = (struct e820map *) (0x8000 + KERNBASE);
     uint64_t maxpa = 0;
 
     cprintf("e820map:\n");
     int i;
-    for (i = 0; i < memmap->nr_map; i ++) {
+    for (i = 0; i < memmap->nr_map; i++) {
         uint64_t begin = memmap->map[i].addr, end = begin + memmap->map[i].size;
         cprintf("  memory: %08llx, [%08llx, %08llx], type = %d.\n",
                 memmap->map[i].size, begin, end - 1, memmap->map[i].type);
@@ -224,15 +225,15 @@ page_init(void) {
     extern char end[];
 
     npage = maxpa / PGSIZE;
-    pages = (struct Page *)ROUNDUP((void *)end, PGSIZE);
+    pages = (struct Page *) ROUNDUP((void *) end, PGSIZE);
 
-    for (i = 0; i < npage; i ++) {
+    for (i = 0; i < npage; i++) {
         SetPageReserved(pages + i);
     }
 
-    uintptr_t freemem = PADDR((uintptr_t)pages + sizeof(struct Page) * npage);
+    uintptr_t freemem = PADDR((uintptr_t) pages + sizeof(struct Page) * npage);
 
-    for (i = 0; i < memmap->nr_map; i ++) {
+    for (i = 0; i < memmap->nr_map; i++) {
         uint64_t begin = memmap->map[i].addr, end = begin + memmap->map[i].size;
         if (memmap->map[i].type == E820_ARM) {
             if (begin < freemem) {
@@ -275,7 +276,7 @@ boot_map_segment(pde_t *pgdir, uintptr_t la, size_t size, uintptr_t pa, uint32_t
     size_t n = ROUNDUP(size + PGOFF(la), PGSIZE) / PGSIZE;
     la = ROUNDDOWN(la, PGSIZE);
     pa = ROUNDDOWN(pa, PGSIZE);
-    for (; n > 0; n --, la += PGSIZE, pa += PGSIZE) {
+    for (; n > 0; n--, la += PGSIZE, pa += PGSIZE) {
         pte_t *ptep = get_pte(pgdir, la, 1);
         assert(ptep != NULL);
         *ptep = pa | PTE_P | perm;
@@ -349,7 +350,7 @@ pmm_init(void) {
     check_boot_pgdir();
 
     print_pgdir();
-    
+
     kmalloc_init();
 
 }
@@ -407,7 +408,7 @@ get_pte(pde_t *pgdir, uintptr_t la, bool create) {
         memset(KADDR(pa), 0, PGSIZE);
         *pdep = pa | PTE_U | PTE_W | PTE_P;
     }
-    return &((pte_t *)KADDR(PDE_ADDR(*pdep)))[PTX(la)];
+    return &((pte_t *) KADDR(PDE_ADDR(*pdep)))[PTX(la)];
 }
 
 //get_page - get related Page struct for linear address la using PDT pgdir
@@ -453,7 +454,7 @@ page_remove_pte(pde_t *pgdir, uintptr_t la, pte_t *ptep) {
                                   //(6) flush tlb
     }
 #endif
-if (*ptep & PTE_P) {
+    if (*ptep & PTE_P) {
         struct Page *page = pte2page(*ptep);
         if (page_ref_dec(page) == 0) {
             free_page(page);
@@ -472,7 +473,7 @@ unmap_range(pde_t *pgdir, uintptr_t start, uintptr_t end) {
         pte_t *ptep = get_pte(pgdir, start, 0);
         if (ptep == NULL) {
             start = ROUNDDOWN(start + PTSIZE, PTSIZE);
-            continue ;
+            continue;
         }
         if (*ptep != 0) {
             page_remove_pte(pgdir, start, ptep);
@@ -496,6 +497,7 @@ exit_range(pde_t *pgdir, uintptr_t start, uintptr_t end) {
         start += PTSIZE;
     } while (start != 0 && start < end);
 }
+
 /* copy_range - copy content of memory (start, end) of one process A to another process B
  * @to:    the addr of process B's Page Directory
  * @from:  the addr of process A's Page Directory
@@ -513,42 +515,55 @@ copy_range(pde_t *to, pde_t *from, uintptr_t start, uintptr_t end, bool share) {
         pte_t *ptep = get_pte(from, start, 0), *nptep;
         if (ptep == NULL) {
             start = ROUNDDOWN(start + PTSIZE, PTSIZE);
-            continue ;
+            continue;
         }
         //call get_pte to find process B's pte according to the addr start. If pte is NULL, just alloc a PT
         if (*ptep & PTE_P) {
             if ((nptep = get_pte(to, start, 1)) == NULL) {
                 return -E_NO_MEM;
             }
-        uint32_t perm = (*ptep & PTE_USER);
-        //get page from ptep
-        struct Page *page = pte2page(*ptep);
-        // alloc a page for process B
-        struct Page *npage=alloc_page();
-        assert(page!=NULL);
-        assert(npage!=NULL);
-        int ret=0;
-        /* LAB5:EXERCISE2 YOUR CODE
-         * replicate content of page to npage, build the map of phy addr of nage with the linear addr start
-         *
-         * Some Useful MACROs and DEFINEs, you can use them in below implementation.
-         * MACROs or Functions:
-         *    page2kva(struct Page *page): return the kernel vritual addr of memory which page managed (SEE pmm.h)
-         *    page_insert: build the map of phy addr of an Page with the linear addr la
-         *    memcpy: typical memory copy function
-         *
-         * (1) find src_kvaddr: the kernel virtual address of page
-         * (2) find dst_kvaddr: the kernel virtual address of npage
-         * (3) memory copy from src_kvaddr to dst_kvaddr, size is PGSIZE
-         * (4) build the map of phy addr of  nage with the linear addr start
-         */
-        void * kva_src = page2kva(page);
-        void * kva_dst = page2kva(npage);
-    
-        memcpy(kva_dst, kva_src, PGSIZE);
+            uint32_t perm = (*ptep & PTE_USER);
+            //get page from ptep
+            struct Page *page = pte2page(*ptep);
+            // alloc a page for process B
+            assert(page != NULL);
 
-        ret = page_insert(to, npage, start, perm);
-        assert(ret == 0);
+            int ret = 0;
+            /* LAB5:EXERCISE2 YOUR CODE
+             * replicate content of page to npage, build the map of phy addr of nage with the linear addr start
+             *
+             * Some Useful MACROs and DEFINEs, you can use them in below implementation.
+             * MACROs or Functions:
+             *    page2kva(struct Page *page): return the kernel vritual addr of memory which page managed (SEE pmm.h)
+             *    page_insert: build the map of phy addr of an Page with the linear addr la
+             *    memcpy: typical memory copy function
+             *
+             * (1) find src_kvaddr: the kernel virtual address of page
+             * (2) find dst_kvaddr: the kernel virtual address of npage
+             * (3) memory copy from src_kvaddr to dst_kvaddr, size is PGSIZE
+             * (4) build the map of phy addr of  nage with the linear addr start
+             */
+            /**
+               * Copy on write implement
+             */
+            if (share) {
+                //当开启COW机制后，我们不需要完全重新将原来的页的内容拷贝到
+                //新分配的一个页，而是直接将新的进程指向原页面，并且将页面设置为只读
+                perm = (*ptep & (PTE_U | PTE_P));
+                assert(page != NULL);
+                // Set the new mm to be readonly.
+                page_insert(to, page, start, perm & ~PTE_W);
+                // Set the old mm to be readonly
+                page_insert(from, page, start, perm & ~PTE_W);
+            } else {
+                struct Page *npage = alloc_page();
+                assert(npage != NULL);
+                void *kva_src = page2kva(page);
+                void *kva_dst = page2kva(npage);
+                memcpy(kva_dst, kva_src, PGSIZE);
+                ret = page_insert(to, npage, start, perm);
+                assert(ret == 0);
+            }
         }
         start += PGSIZE;
     } while (start != 0 && start < end);
@@ -583,8 +598,7 @@ page_insert(pde_t *pgdir, struct Page *page, uintptr_t la, uint32_t perm) {
         struct Page *p = pte2page(*ptep);
         if (p == page) {
             page_ref_dec(page);
-        }
-        else {
+        } else {
             page_remove_pte(pgdir, la, ptep);
         }
     }
@@ -598,7 +612,7 @@ page_insert(pde_t *pgdir, struct Page *page, uintptr_t la, uint32_t perm) {
 void
 tlb_invalidate(pde_t *pgdir, uintptr_t la) {
     if (rcr3() == PADDR(pgdir)) {
-        invlpg((void *)la);
+        invlpg((void *) la);
     }
 }
 
@@ -613,14 +627,13 @@ pgdir_alloc_page(pde_t *pgdir, uintptr_t la, uint32_t perm) {
             free_page(page);
             return NULL;
         }
-        if (swap_init_ok){
-            if(check_mm_struct!=NULL) {
+        if (swap_init_ok) {
+            if (check_mm_struct != NULL) {
                 swap_map_swappable(check_mm_struct, la, page, 0);
-                page->pra_vaddr=la;
+                page->pra_vaddr = la;
                 assert(page_ref(page) == 1);
                 //cprintf("get No. %d  page: pra_vaddr %x, pra_link.prev %x, pra_link_next %x in pgdir_alloc_page\n", (page-pages), page->pra_vaddr,page->pra_page_link.prev, page->pra_page_link.next);
-            } 
-            else  {  //now current is existed, should fix it in the future
+            } else {  //now current is existed, should fix it in the future
                 //swap_map_swappable(current->mm, la, page, 0);
                 //page->pra_vaddr=la;
                 //assert(page_ref(page) == 1);
@@ -642,7 +655,7 @@ check_alloc_page(void) {
 static void
 check_pgdir(void) {
     assert(npage <= KMEMSIZE / PGSIZE);
-    assert(boot_pgdir != NULL && (uint32_t)PGOFF(boot_pgdir) == 0);
+    assert(boot_pgdir != NULL && (uint32_t) PGOFF(boot_pgdir) == 0);
     assert(get_page(boot_pgdir, 0x0, NULL) == NULL);
 
     struct Page *p1, *p2;
@@ -654,7 +667,7 @@ check_pgdir(void) {
     assert(pte2page(*ptep) == p1);
     assert(page_ref(p1) == 1);
 
-    ptep = &((pte_t *)KADDR(PDE_ADDR(boot_pgdir[0])))[1];
+    ptep = &((pte_t *) KADDR(PDE_ADDR(boot_pgdir[0])))[1];
     assert(get_pte(boot_pgdir, PGSIZE, 0) == ptep);
 
     p2 = alloc_page();
@@ -692,7 +705,7 @@ check_boot_pgdir(void) {
     pte_t *ptep;
     int i;
     for (i = 0; i < npage; i += PGSIZE) {
-        assert((ptep = get_pte(boot_pgdir, (uintptr_t)KADDR(i), 0)) != NULL);
+        assert((ptep = get_pte(boot_pgdir, (uintptr_t) KADDR(i), 0)) != NULL);
         assert(PTE_ADDR(*ptep) == i);
     }
 
@@ -708,11 +721,11 @@ check_boot_pgdir(void) {
     assert(page_ref(p) == 2);
 
     const char *str = "ucore: Hello world!!";
-    strcpy((void *)0x100, str);
-    assert(strcmp((void *)0x100, (void *)(0x100 + PGSIZE)) == 0);
+    strcpy((void *) 0x100, str);
+    assert(strcmp((void *) 0x100, (void *) (0x100 + PGSIZE)) == 0);
 
-    *(char *)(page2kva(p) + 0x100) = '\0';
-    assert(strlen((const char *)0x100) == 0);
+    *(char *) (page2kva(p) + 0x100) = '\0';
+    assert(strlen((const char *) 0x100) == 0);
 
     free_page(p);
     free_page(pde2page(boot_pgdir[0]));
@@ -749,15 +762,15 @@ get_pgtable_items(size_t left, size_t right, size_t start, uintptr_t *table, siz
         return 0;
     }
     while (start < right && !(table[start] & PTE_P)) {
-        start ++;
+        start++;
     }
     if (start < right) {
         if (left_store != NULL) {
             *left_store = start;
         }
-        int perm = (table[start ++] & PTE_USER);
+        int perm = (table[start++] & PTE_USER);
         while (start < right && (table[start] & PTE_USER) == perm) {
-            start ++;
+            start++;
         }
         if (right_store != NULL) {
             *right_store = start;

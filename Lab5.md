@@ -334,10 +334,74 @@ exec也不必再赘述。
 
 在copy_range()函数中，不需要建立新的映射，而是将子进程的内存直接指向父进程，并且将页设置为只读。
 
-并且在do_pgfault()中设置相应的对于写只读页的处理：
+并且在do_pgfault()中设置相应的对于**写只读页**的处理：
 
 当进程访问了共享的页面时（只读页面），内核需要重新分配页面、拷贝页面内容、建立映射关系：
 
-如果该页ref为1,说明只有一个指向，则我们不需要重新拷贝，只需要修改其权限即可。
+如果该页ref为1,说明只有一个指向，则我们不需要重新拷贝，只需要修改其权限即可解决PF问题。
 
-如果该页的ref大于1,说明有多个指向该只读页，说明是copyOnWrite的内容，我们需要进行类似与copy_range中实现的拷贝
+如果该页的ref大于1,说明有多个指向该只读页，说明是copyOnWrite的内容，我们需要进行类似与copy_range中实现的拷贝。
+
+具体实现如下：
+
+修改copy_range()函数的修改：
+
+```c
+if (share) {
+                //当开启COW机制后，我们不需要完全重新将原来的页的内容拷贝到
+                //新分配的一个页，而是直接将新的进程指向原页面，并且将页面设置为只读
+                perm = (*ptep & (PTE_U | PTE_P));
+                assert(page != NULL);
+                // Set the new mm to be readonly.
+                page_insert(to, page, start, perm & ~PTE_W);
+                // Set the old mm to be readonly
+                page_insert(from, page, start, perm & ~PTE_W);
+            } else {
+                struct Page *npage = alloc_page();
+                assert(npage != NULL);
+                void *kva_src = page2kva(page);
+                void *kva_dst = page2kva(npage);
+                memcpy(kva_dst, kva_src, PGSIZE);
+                ret = page_insert(to, npage, start, perm);
+                assert(ret == 0);
+            }
+```
+
+
+
+对于do_pgfault()函数的修改
+
+```c
+if (*ptep & PTE_P) {
+            // Read-only possibly caused by COW.
+            if (vma->vm_flags & VM_WRITE) {
+                // If ref of pages == 1, it is not shared, just make pte writable.
+                // else, alloc a new page, copy content and reset pte.
+                // also, remember to decrease ref of that page!
+                struct Page *p = pte2page(*ptep);
+                assert(p != NULL);
+                assert(p->ref > 0);
+                if (p->ref > 1) {
+                    //当引用次数大于1,说明写只读页产生的问题为写了共享页，需要分配新的页并将内容复制
+                    struct Page *npage = alloc_page();
+                    assert(npage != NULL);
+                    void *src_kvaddr = page2kva(p);
+                    void *dst_kvaddr = page2kva(npage);
+                    memcpy(dst_kvaddr, src_kvaddr, PGSIZE);
+                    // addr already ROUND down.
+                    page_insert(mm->pgdir, npage, addr, ((*ptep) & PTE_USER) | PTE_W);
+                    // page_ref_dec(p);
+                    cprintf("Handled one COW fault at %x: copied\n", addr);
+                } else {
+                    //如果不是，说明只是权限问题，放开权限为可写
+                    page_insert(mm->pgdir, p, addr, ((*ptep) & PTE_USER) | PTE_W);
+                    cprintf("Handled one COW fault: reused\n");
+                }
+            }
+        } 
+```
+
+
+
+最后执行make run-dirtycow检测即可。
+

@@ -109,6 +109,20 @@ alloc_proc(void) {
      *       uint32_t wait_state;                        // waiting state
      *       struct proc_struct *cptr, *yptr, *optr;     // relations between processes
 	 */
+	proc->state = PROC_UNINIT;
+        proc->pid = -1;
+        proc->runs = 0;
+        proc->kstack = 0;
+        proc->need_resched = 0;
+        proc->parent = NULL;
+        proc->mm = NULL;
+        memset(&(proc->context), 0, sizeof(struct context));
+        proc->tf = NULL;
+        proc->cr3 = boot_cr3;
+        proc->flags = 0;
+        memset(proc->name, 0, PROC_NAME_LEN);
+        proc->wait_state = 0;//PCB 进程控制块中新增的条目，初始化进程等待状态
+        proc->cptr = proc->optr = proc->yptr = NULL;//进程相关指针初始化
      //LAB6 YOUR CODE : (update LAB5 steps)
     /*
      * below fields(add in LAB6) in proc_struct need to be initialized
@@ -119,6 +133,12 @@ alloc_proc(void) {
      *     uint32_t lab6_stride;                       // FOR LAB6 ONLY: the current stride of the process
      *     uint32_t lab6_priority;                     // FOR LAB6 ONLY: the priority of process, set by lab6_set_priority(uint32_t)
      */
+        proc->rq = NULL;
+        list_init(&(proc->run_link));
+        proc->time_slice = 0;
+        proc->lab6_run_pool.left = proc->lab6_run_pool.right = proc->lab6_run_pool.parent = NULL;
+        proc->lab6_stride = 0;
+        proc->lab6_priority = 0;
     }
     return proc;
 }
@@ -413,8 +433,49 @@ do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe *tf) {
 	*    update step 1: set child proc's parent to current process, make sure current process's wait_state is 0
 	*    update step 5: insert proc_struct into hash_list && proc_list, set the relation links of process
     */
-	
-fork_out:
+
+    if ((proc = alloc_proc()) == NULL) {
+        goto fork_out;
+    }
+
+    proc->parent = current;
+    assert(current->wait_state == 0);
+
+    if (setup_kstack(proc) != 0) {
+        goto bad_fork_cleanup_proc;
+    }
+    //为进程分配一个内核栈，分配失败则需要清空。
+
+    if (copy_mm(clone_flags, proc) != 0) {
+        goto bad_fork_cleanup_kstack;
+    }
+    //复制或者共享内存，在本实验无须做任何事，因为内核线程共享虚拟内存
+
+    //按照clone_flags所给提示，选择复制或者共享内存空间
+    copy_thread(proc, stack, tf);
+    //初始化上下文及tf变量中寄存器信息
+
+    bool intr_flag;
+    local_intr_save(intr_flag);
+    //屏蔽中断
+    proc->pid = get_pid();
+    //为其分配一个合法的pid
+    hash_proc(proc);
+    //这里的hash是基于pid的，因此需要在pid初始化后hash
+    set_links(proc);
+    //设置进程的亲子关系
+    nr_process++;
+
+    local_intr_restore(intr_flag);
+    //开中断
+
+    wakeup_proc(proc);
+    //唤醒进程：使其状态变为runnable
+
+    ret = proc->pid;
+    //返回值就是分配的pid
+
+    fork_out:
     return ret;
 
 bad_fork_cleanup_kstack:
@@ -612,6 +673,11 @@ load_icode(unsigned char *binary, size_t size) {
      *          tf_eip should be the entry point of this binary program (elf->e_entry)
      *          tf_eflags should be set to enable computer to produce Interrupt
      */
+    tf->tf_cs = USER_CS;
+    tf->tf_ds = tf->tf_es = tf->tf_ss = USER_DS;
+    tf->tf_esp = USTACKTOP;
+    tf->tf_eip = elf->e_entry;
+    tf->tf_eflags = FL_IF;
     ret = 0;
 out:
     return ret;
@@ -812,7 +878,8 @@ init_main(void *arg) {
     assert(nr_process == 2);
     assert(list_next(&proc_list) == &(initproc->list_link));
     assert(list_prev(&proc_list) == &(initproc->list_link));
-
+    assert(nr_free_pages_store == nr_free_pages());
+    assert(kernel_allocated_store == kallocated());
     cprintf("init check memory pass.\n");
     return 0;
 }

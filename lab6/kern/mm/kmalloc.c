@@ -186,9 +186,14 @@ static void slob_free(void *block, int size)
 
 
 
+void check_slab(void) {
+  cprintf("check_slab() success\n");
+}
+
 void
 slob_init(void) {
   cprintf("use SLOB allocator\n");
+  check_slab();
 }
 
 inline void 

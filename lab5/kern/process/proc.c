@@ -117,8 +117,6 @@ alloc_proc(void) {
         memset(proc->name, 0, PROC_NAME_LEN);
         proc->wait_state = 0;//PCB 进程控制块中新增的条目，初始化进程等待状态
         proc->cptr = proc->optr = proc->yptr = NULL;//进程相关指针初始化
-
-
     }
     return proc;
 }

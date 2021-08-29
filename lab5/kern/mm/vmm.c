@@ -36,7 +36,9 @@
 */
 
 static void check_vmm(void);
+
 static void check_vma_struct(void);
+
 static void check_pgfault(void);
 
 // mm_create -  alloc a mm_struct & initialize it.
@@ -52,10 +54,10 @@ mm_create(void) {
 
         if (swap_init_ok) swap_init_mm(mm);
         else mm->sm_priv = NULL;
-        
+
         set_mm_count(mm, 0);
         lock_init(&(mm->mm_lock));
-    }    
+    }
     return mm;
 }
 
@@ -80,18 +82,18 @@ find_vma(struct mm_struct *mm, uintptr_t addr) {
     if (mm != NULL) {
         vma = mm->mmap_cache;
         if (!(vma != NULL && vma->vm_start <= addr && vma->vm_end > addr)) {
-                bool found = 0;
-                list_entry_t *list = &(mm->mmap_list), *le = list;
-                while ((le = list_next(le)) != list) {
-                    vma = le2vma(le, list_link);
-                    if (vma->vm_start<=addr && addr < vma->vm_end) {
-                        found = 1;
-                        break;
-                    }
+            bool found = 0;
+            list_entry_t *list = &(mm->mmap_list), *le = list;
+            while ((le = list_next(le)) != list) {
+                vma = le2vma(le, list_link);
+                if (vma->vm_start <= addr && addr < vma->vm_end) {
+                    found = 1;
+                    break;
                 }
-                if (!found) {
-                    vma = NULL;
-                }
+            }
+            if (!found) {
+                vma = NULL;
+            }
         }
         if (vma != NULL) {
             mm->mmap_cache = vma;
@@ -117,14 +119,14 @@ insert_vma_struct(struct mm_struct *mm, struct vma_struct *vma) {
     list_entry_t *list = &(mm->mmap_list);
     list_entry_t *le_prev = list, *le_next;
 
-        list_entry_t *le = list;
-        while ((le = list_next(le)) != list) {
-            struct vma_struct *mmap_prev = le2vma(le, list_link);
-            if (mmap_prev->vm_start > vma->vm_start) {
-                break;
-            }
-            le_prev = le;
+    list_entry_t *le = list;
+    while ((le = list_next(le)) != list) {
+        struct vma_struct *mmap_prev = le2vma(le, list_link);
+        if (mmap_prev->vm_start > vma->vm_start) {
+            break;
         }
+        le_prev = le;
+    }
 
     le_next = list_next(le_prev);
 
@@ -139,7 +141,7 @@ insert_vma_struct(struct mm_struct *mm, struct vma_struct *vma) {
     vma->vm_mm = mm;
     list_add_after(le_prev, &(vma->list_link));
 
-    mm->map_count ++;
+    mm->map_count++;
 }
 
 // mm_destroy - free mm and mm internal fields
@@ -153,7 +155,7 @@ mm_destroy(struct mm_struct *mm) {
         kfree(le2vma(le, list_link));  //kfree vma        
     }
     kfree(mm); //kfree mm
-    mm=NULL;
+    mm = NULL;
 }
 
 int
@@ -183,7 +185,7 @@ mm_map(struct mm_struct *mm, uintptr_t addr, size_t len, uint32_t vm_flags,
     }
     ret = 0;
 
-out:
+    out:
     return ret;
 }
 
@@ -226,7 +228,7 @@ exit_mmap(struct mm_struct *mm) {
 
 bool
 copy_from_user(struct mm_struct *mm, void *dst, const void *src, size_t len, bool writable) {
-    if (!user_mem_check(mm, (uintptr_t)src, len, writable)) {
+    if (!user_mem_check(mm, (uintptr_t) src, len, writable)) {
         return 0;
     }
     memcpy(dst, src, len);
@@ -235,7 +237,7 @@ copy_from_user(struct mm_struct *mm, void *dst, const void *src, size_t len, boo
 
 bool
 copy_to_user(struct mm_struct *mm, void *dst, const void *src, size_t len) {
-    if (!user_mem_check(mm, (uintptr_t)dst, len, 1)) {
+    if (!user_mem_check(mm, (uintptr_t) dst, len, 1)) {
         return 0;
     }
     memcpy(dst, src, len);
@@ -253,7 +255,7 @@ vmm_init(void) {
 static void
 check_vmm(void) {
     size_t nr_free_pages_store = nr_free_pages();
-    
+
     check_vma_struct();
     check_pgfault();
 
@@ -272,13 +274,13 @@ check_vma_struct(void) {
     int step1 = 10, step2 = step1 * 10;
 
     int i;
-    for (i = step1; i >= 1; i --) {
+    for (i = step1; i >= 1; i--) {
         struct vma_struct *vma = vma_create(i * 5, i * 5 + 2, 0);
         assert(vma != NULL);
         insert_vma_struct(mm, vma);
     }
 
-    for (i = step1 + 1; i <= step2; i ++) {
+    for (i = step1 + 1; i <= step2; i++) {
         struct vma_struct *vma = vma_create(i * 5, i * 5 + 2, 0);
         assert(vma != NULL);
         insert_vma_struct(mm, vma);
@@ -286,33 +288,33 @@ check_vma_struct(void) {
 
     list_entry_t *le = list_next(&(mm->mmap_list));
 
-    for (i = 1; i <= step2; i ++) {
+    for (i = 1; i <= step2; i++) {
         assert(le != &(mm->mmap_list));
         struct vma_struct *mmap = le2vma(le, list_link);
         assert(mmap->vm_start == i * 5 && mmap->vm_end == i * 5 + 2);
         le = list_next(le);
     }
 
-    for (i = 5; i <= 5 * step2; i +=5) {
+    for (i = 5; i <= 5 * step2; i += 5) {
         struct vma_struct *vma1 = find_vma(mm, i);
         assert(vma1 != NULL);
-        struct vma_struct *vma2 = find_vma(mm, i+1);
+        struct vma_struct *vma2 = find_vma(mm, i + 1);
         assert(vma2 != NULL);
-        struct vma_struct *vma3 = find_vma(mm, i+2);
+        struct vma_struct *vma3 = find_vma(mm, i + 2);
         assert(vma3 == NULL);
-        struct vma_struct *vma4 = find_vma(mm, i+3);
+        struct vma_struct *vma4 = find_vma(mm, i + 3);
         assert(vma4 == NULL);
-        struct vma_struct *vma5 = find_vma(mm, i+4);
+        struct vma_struct *vma5 = find_vma(mm, i + 4);
         assert(vma5 == NULL);
 
-        assert(vma1->vm_start == i  && vma1->vm_end == i  + 2);
-        assert(vma2->vm_start == i  && vma2->vm_end == i  + 2);
+        assert(vma1->vm_start == i && vma1->vm_end == i + 2);
+        assert(vma2->vm_start == i && vma2->vm_end == i + 2);
     }
 
-    for (i =4; i>=0; i--) {
-        struct vma_struct *vma_below_5= find_vma(mm,i);
-        if (vma_below_5 != NULL ) {
-           cprintf("vma_below_5: i %x, start %x, end %x\n",i, vma_below_5->vm_start, vma_below_5->vm_end); 
+    for (i = 4; i >= 0; i--) {
+        struct vma_struct *vma_below_5 = find_vma(mm, i);
+        if (vma_below_5 != NULL) {
+            cprintf("vma_below_5: i %x, start %x, end %x\n", i, vma_below_5->vm_start, vma_below_5->vm_end);
         }
         assert(vma_below_5 == NULL);
     }
@@ -347,12 +349,12 @@ check_pgfault(void) {
     assert(find_vma(mm, addr) == vma);
 
     int i, sum = 0;
-    for (i = 0; i < 100; i ++) {
-        *(char *)(addr + i) = i;
+    for (i = 0; i < 100; i++) {
+        *(char *) (addr + i) = i;
         sum += i;
     }
-    for (i = 0; i < 100; i ++) {
-        sum -= *(char *)(addr + i);
+    for (i = 0; i < 100; i++) {
+        sum -= *(char *) (addr + i);
     }
     assert(sum == 0);
 
@@ -368,8 +370,9 @@ check_pgfault(void) {
 
     cprintf("check_pgfault() succeeded!\n");
 }
+
 //page fault number
-volatile unsigned int pgfault_num=0;
+volatile unsigned int pgfault_num = 0;
 
 /* do_pgfault - interrupt handler to process the page fault execption
  * @mm         : the control struct for a set of vma using the same PDT
@@ -406,22 +409,22 @@ do_pgfault(struct mm_struct *mm, uint32_t error_code, uintptr_t addr) {
     }
     //check the error_code
     switch (error_code & 3) {
-    default:
+        default:
             /* error code flag : default is 3 ( W/R=1, P=1): write, present */
-    case 2: /* error code flag : (W/R=1, P=0): write, not present */
-        if (!(vma->vm_flags & VM_WRITE)) {
-            cprintf("do_pgfault failed: error code flag = write AND not present, but the addr's vma cannot write\n");
+        case 2: /* error code flag : (W/R=1, P=0): write, not present */
+            if (!(vma->vm_flags & VM_WRITE)) {
+                cprintf("do_pgfault failed: error code flag = write AND not present, but the addr's vma cannot write\n");
+                goto failed;
+            }
+            break;
+        case 1: /* error code flag : (W/R=0, P=1): read, present */
+            cprintf("do_pgfault failed: error code flag = read AND present\n");
             goto failed;
-        }
-        break;
-    case 1: /* error code flag : (W/R=0, P=1): read, present */
-        cprintf("do_pgfault failed: error code flag = read AND present\n");
-        goto failed;
-    case 0: /* error code flag : (W/R=0, P=0): read, not present */
-        if (!(vma->vm_flags & (VM_READ | VM_EXEC))) {
-            cprintf("do_pgfault failed: error code flag = read AND not present, but the addr's vma cannot read or exec\n");
-            goto failed;
-        }
+        case 0: /* error code flag : (W/R=0, P=0): read, not present */
+            if (!(vma->vm_flags & (VM_READ | VM_EXEC))) {
+                cprintf("do_pgfault failed: error code flag = read AND not present, but the addr's vma cannot read or exec\n");
+                goto failed;
+            }
     }
     /* IF (write an existed addr ) OR
      *    (write an non_existed addr && addr is writable) OR
@@ -437,7 +440,7 @@ do_pgfault(struct mm_struct *mm, uint32_t error_code, uintptr_t addr) {
 
     ret = -E_NO_MEM;
 
-    pte_t *ptep=NULL;
+    pte_t *ptep = NULL;
     /*LAB3 EXERCISE 1: YOUR CODE
     * Maybe you want help comment, BELOW comments can help you finish the code
     *
@@ -476,12 +479,12 @@ do_pgfault(struct mm_struct *mm, uint32_t error_code, uintptr_t addr) {
     */
     /*
      * LAB5 CHALLENGE ( the implmentation Copy on Write)
-		There are 2 situlations when code comes here.
-		  1) *ptep & PTE_P == 1, it means one process try to write a readonly page. 
-		     If the vma includes this addr is writable, then we can set the page writable by rewrite the *ptep.
-		     This method could be used to implement the Copy on Write (COW) thchnology(a fast fork process method).
-		  2) *ptep & PTE_P == 0 & but *ptep!=0, it means this pte is a  swap entry.
-		     We should add the LAB3's results here.
+        There are 2 situlations when code comes here.
+          1) *ptep & PTE_P == 1, it means one process try to write a readonly page.
+             If the vma includes this addr is writable, then we can set the page writable by rewrite the *ptep.
+             This method could be used to implement the Copy on Write (COW) thchnology(a fast fork process method).
+          2) *ptep & PTE_P == 0 & but *ptep!=0, it means this pte is a  swap entry.
+             We should add the LAB3's results here.
      */
         if(swap_init_ok) {
             struct Page *page=NULL;
@@ -510,55 +513,59 @@ do_pgfault(struct mm_struct *mm, uint32_t error_code, uintptr_t addr) {
             cprintf("pgdir_alloc_page in do_pgfault failed\n");
             goto failed;
         }
-    }
-    else {
-        struct Page *page=NULL;
-        cprintf("do pgfault: ptep %x, pte %x\n",ptep, *ptep);
+    } else {
+        struct Page *page = NULL;
+        cprintf("do pgfault: ptep %x, pte %x\n", ptep, *ptep);
         if (*ptep & PTE_P) {
-            //if process write to this existed readonly page (PTE_P means existed), then should be here now.
-            //we can implement the delayed memory space copy for fork child process (AKA copy on write, COW).
-            //we didn't implement now, we will do it in future.
-
-            panic("error write a non-writable pte");
-            //page = pte2page(*ptep);
-            page=pte2page(*ptep);
-            if(page_ref(page)>1){
-                //该页的引用大于1,说明有多个进程指向该页
-                struct Page *npage=pgdir_alloc_page(mm->pgdir, addr, perm);
-                //根据该页目录新建立页
-                void *src_vma= page2kva(page);
-                void *dst_vma= page2kva(npage);
-                memcpy(dst_vma,src_vma,PGSIZE);
-            }else{
-                page_insert(mm->pgdir,page,addr,perm);
+            // Read-only possibly caused by COW.
+            if (vma->vm_flags & VM_WRITE) {
+                // If ref of pages == 1, it is not shared, just make pte writable.
+                // else, alloc a new page, copy content and reset pte.
+                // also, remember to decrease ref of that page!
+                struct Page *p = pte2page(*ptep);
+                assert(p != NULL);
+                assert(p->ref > 0);
+                if (p->ref > 1) {
+                    struct Page *npage = alloc_page();
+                    assert(npage != NULL);
+                    void *src_kvaddr = page2kva(p);
+                    void *dst_kvaddr = page2kva(npage);
+                    memcpy(dst_kvaddr, src_kvaddr, PGSIZE);
+                    // addr already ROUND down.
+                    page_insert(mm->pgdir, npage, addr, ((*ptep) & PTE_USER) | PTE_W);
+                    // page_ref_dec(p);
+                    cprintf("Handled one COW fault at %x: copied\n", addr);
+                } else {
+                    page_insert(mm->pgdir, p, addr, ((*ptep) & PTE_USER) | PTE_W);
+                    cprintf("Handled one COW fault: reused\n");
+                }
             }
+        } else {
+            if (swap_init_ok) {
+                struct Page *page = NULL;
+                //(1）According to the mm AND addr, try to load the content of right disk page
+                //    into the memory which page managed.
+                //(2) According to the mm, addr AND page, setup the map of phy addr <---> logical addr
+                //(3) make the page swappable.
+                //(4) [NOTICE]: you myabe need to update your lab3's implementation for LAB5's normal execution.
 
-
-
-        } else{
-            // if this pte is a swap entry, then load data from disk to a page with phy addr
-            // and call page_insert to map the phy addr with logical addr
-            if(swap_init_ok) {
                 if ((ret = swap_in(mm, addr, &page)) != 0) {
                     cprintf("swap_in in do_pgfault failed\n");
                     goto failed;
                 }
-
-            }
-            else {
-                cprintf("no swap_init_ok but ptep is %x, failed\n",*ptep);
+                page_insert(mm->pgdir, page, addr, perm);
+                swap_map_swappable(mm, addr, page, 1);
+                page->pra_vaddr = addr;
+            } else {
+                cprintf("no swap_init_ok but ptep is %x, failed\n", *ptep);
                 goto failed;
             }
         }
-        page_insert(mm->pgdir, page, addr, perm);
-        swap_map_swappable(mm, addr, page, 1);
-        page->pra_vaddr = addr;
+        ret = 0;
+        failed:
+        return ret;
     }
-   ret = 0;
-failed:
-    return ret;
 }
-
 
 
 bool
