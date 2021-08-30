@@ -145,7 +145,7 @@ init,enqueue,dequeue等等，使用了void*类型，便于指向具体的实现�
 
 
 
-前置：修改grade.sh文件，否则无论怎么写都无法满分：
+前置：修改grade.sh文件，否则无论怎么写都无法满分？：
 
 将220至241部分注释即可。
 
@@ -156,4 +156,155 @@ init,enqueue,dequeue等等，使用了void*类型，便于指向具体的实现�
 我们每次需要选出stride最小的进程执行，说到最小，我们自然想到了使用优先队列来完成！
 
 优先队列的本质就是一个大根堆或者小根堆。
+
+依次实现需要的“接口（这里当然是函数）”
+
+```c
+static void
+stride_init(struct run_queue *rq) {
+     /* LAB6: YOUR CODE
+      * (1) init the ready process list: rq->run_list
+      * (2) init the run pool: rq->lab6_run_pool
+      * (3) set number of process: rq->proc_num to 0
+      */
+     list_init(&(rq->run_list));
+     rq->lab6_run_pool=NULL;
+     rq->proc_num=0;
+}
+//初始化，即对就绪队列的初始化
+```
+
+```c
+static void
+stride_enqueue(struct run_queue *rq, struct proc_struct *proc) {
+     /* LAB6: YOUR CODE
+      * (1) insert the proc into rq correctly
+      * NOTICE: you can use skew_heap or list. Important functions
+      *         skew_heap_insert: insert a entry into skew_heap
+      *         list_add_before: insert  a entry into the last of list
+      * (2) recalculate proc->time_slice
+      * (3) set proc->rq pointer to rq
+      * (4) increase rq->proc_num
+      */
+#if USE_SKEW_HEAP
+     rq->lab6_run_pool=skew_heap_insert(rq->lab6_run_pool,&proc->lab6_run_pool,proc_stride_comp_f);
+#else
+    assert(list_empty(&(proc->run_link)));
+    list_add_before(&(rq->run_list),&(proc->run_link));
+#endif
+    if(proc->time_slice==0||proc->time_slice>rq->max_time_slice){
+        proc->time_slice=rq->max_time_slice;
+    }
+    //在插入后还需要检查，如果时间片已经为0或者超过最大时间片，需要将其设置为最大值，以免出现时间片过大或空调度
+    proc->rq=rq;
+    rq->proc_num++;
+}
+//将对应的进程插入到就需队列，这里我们需要注意，当使用优先级队列时，我们的插入方法需要使用heap_insert
+```
+
+
+
+```c
+static void
+stride_dequeue(struct run_queue *rq, struct proc_struct *proc) {
+     /* LAB6: YOUR CODE
+      * (1) remove the proc from rq correctly
+      * NOTICE: you can use skew_heap or list. Important functions
+      *         skew_heap_remove: remove a entry from skew_heap
+      *         list_del_init: remove a entry from the  list
+      */
+#if USE_SKEW_HEAP
+    rq->lab6_run_pool = skew_heap_remove(rq->lab6_run_pool,&proc->lab6_run_pool,proc_stride_comp_f);
+    //从优先级队列中移除对应元素，移除后堆会进行相应的“下沉操作”，并且需要注意该函数会返回重新下沉后的新的堆，因此还需要修改rq->lab6_run_pool
+#else
+    assert(!list_empty(&(proc->run_link)) && proc->rq == rq);
+    list_del_init(&(proc->run_link));
+#endif
+    rq->proc_num --;
+}
+```
+
+```c
+static struct proc_struct *
+stride_pick_next(struct run_queue *rq) {
+     /* LAB6: YOUR CODE
+      * (1) get a  proc_struct pointer p  with the minimum value of stride
+             (1.1) If using skew_heap, we can use le2proc get the p from rq->lab6_run_pool
+             (1.2) If using list, we have to search list to find the p with minimum stride value
+      * (2) update p;s stride value: p->lab6_stride
+      * (3) return p
+      */
+#if USE_SKEW_HEAP
+    if (rq->lab6_run_pool == NULL) return NULL;
+    struct proc_struct *p = le2proc(rq->lab6_run_pool, lab6_run_pool);//选择 stride 值最小的进程
+#else
+    list_entry_t *le = list_next(&(rq->run_list));
+
+     if (le == &rq->run_list)
+          return NULL;
+
+     struct proc_struct *p = le2proc(le, run_link);
+     le = list_next(le);
+     while (le != &rq->run_list)
+     {
+          struct proc_struct *q = le2proc(le, run_link);
+          if ((int32_t)(p->lab6_stride - q->lab6_stride) > 0)
+               p = q;
+          le = list_next(le);
+     }
+#endif
+    if (p->lab6_priority == 0)//优先级为 0
+        p->lab6_stride += BIG_STRIDE;//步长设置为最大值
+    else p->lab6_stride += BIG_STRIDE / p->lab6_priority;//步长设置为优先级的倒数，更新该进程的 stride 值
+    return p;
+}
+```
+
+```c
+static void
+stride_proc_tick(struct run_queue *rq, struct proc_struct *proc) {
+     /* LAB6: YOUR CODE */
+     if(proc->time_slice>0){
+         proc->time_slice--;
+     }
+     else{
+         proc->need_resched=1;
+     }
+}
+//每一次时钟中断后需要进行的操作
+```
+
+最后执行 make run-priority打印如下：
+
+![](https://cdn.jsdelivr.net/gh/Leo-yang-1020/picRepo/img/20210830094556.png)
+
+Lab6的Stride调度算法成功！
+
+
+
+### 最终总结
+
+我们为了高效地完成Stride调度算法，我们需要引入堆。
+
+我们在process结构体中添加了lab6_run_pool，用于表示堆结构。
+
+同样的，我们的就绪队列也使用了**堆结构**来表示。
+
+我们首先完成了堆的基本操作：
+
+入堆，出堆。以及一个类似于comparator的结构（用于堆的比较，以及大根堆和小根堆的确认）。
+
+我们完成了几大重要函数的补充：
+
+入队，出队，选择，初始化，时钟中断处理。
+
+出队时需要小心：出队后堆会发生变化，我们需要将就绪队列的队头指向变化后的堆顶。
+
+选择时：直接选择到堆头，因为小根堆的堆头就是最小的stride。
+
+
+
+
+
+### 扩展，CFS调度算法的实现
 

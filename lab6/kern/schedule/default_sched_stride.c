@@ -73,7 +73,7 @@ stride_enqueue(struct run_queue *rq, struct proc_struct *proc) {
       * (4) increase rq->proc_num
       */
 #if USE_SKEW_HEAP
-     rq->lab6_run_pool=skew_heap_insert(rq->lab6_run_pool,&proc->lab6_run_pool,proc_stride_comp_f);
+     rq->lab6_run_pool=skew_heap_insert(rq->lab6_run_pool,&(proc->lab6_run_pool),proc_stride_comp_f);
 #else
     assert(list_empty(&(proc->run_link)));
     list_add_before(&(rq->run_list),&(proc->run_link));
@@ -102,8 +102,8 @@ stride_dequeue(struct run_queue *rq, struct proc_struct *proc) {
       *         list_del_init: remove a entry from the  list
       */
 #if USE_SKEW_HEAP
-    skew_heap_remove(rq->lab6_run_pool,&proc->lab6_run_pool,proc_stride_comp_f);
-    //从优先级队列中移除对应元素
+    rq->lab6_run_pool = skew_heap_remove(rq->lab6_run_pool,&(proc->lab6_run_pool),proc_stride_comp_f);
+    //从优先级队列中移除对应元素，移除后堆会进行相应的“下沉操作”
 #else
     assert(!list_empty(&(proc->run_link)) && proc->rq == rq);
     list_del_init(&(proc->run_link));
@@ -132,26 +132,29 @@ stride_pick_next(struct run_queue *rq) {
       * (2) update p;s stride value: p->lab6_stride
       * (3) return p
       */
-    struct proc_struct *min_stride_proc=NULL;
-
 #if USE_SKEW_HEAP
-     min_stride_proc= le2proc(rq->lab6_run_pool,lab6_run_pool);
-
+    if (rq->lab6_run_pool == NULL) return NULL;
+    struct proc_struct *p = le2proc(rq->lab6_run_pool, lab6_run_pool);//选择 stride 值最小的进程
 #else
-    uint32_t min_stride=256;
-    list_entry_t *le=rq->run_list;
-    while((le=le->next)!=&run_list){
-        struct proc_struct *p=le2proc(le,run_list);
-        if(p->lab6_stride<min_stride){
-            min_stride=p->la6->stride;
-            min_stride_proc=p;
-        }
-    }
+    list_entry_t *le = list_next(&(rq->run_list));
+
+     if (le == &rq->run_list)
+          return NULL;
+
+     struct proc_struct *p = le2proc(le, run_link);
+     le = list_next(le);
+     while (le != &rq->run_list)
+     {
+          struct proc_struct *q = le2proc(le, run_link);
+          if ((int32_t)(p->lab6_stride - q->lab6_stride) > 0)
+               p = q;
+          le = list_next(le);
+     }
 #endif
-    if(min_stride_proc!=NULL){
-        min_stride_proc->lab6_stride+=BIG_STRIDE/(min_stride_proc->lab6_priority);
-    }
-    return min_stride_proc;
+    if (p->lab6_priority == 0)//优先级为 0
+        p->lab6_stride += BIG_STRIDE;//步长设置为最大值
+    else p->lab6_stride += BIG_STRIDE / p->lab6_priority;//步长设置为优先级的倒数，更新该进程的 stride 值
+    return p;
 }
 
 /*
