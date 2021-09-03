@@ -45,7 +45,7 @@ check_vma_struct() succeeded!
 page fault at 0x00000100: K/W [no page found].
 check_pgfault() succeeded!
 check_vmm() succeeded.
-sched class: stride_scheduler
+sched class: RR_scheduler
 ide 0:      10000(sectors), 'QEMU HARDDISK'.
 ide 1:     262144(sectors), 'QEMU HARDDISK'.
 SWAP: manager = fifo swap manager
@@ -126,4 +126,3 @@ kernel panic at kern/process/proc.c:878:
     assertion failed: nr_process == 2
 Welcome to the kernel debug monitor!!
 Type 'help' for a list of commands.
-K> 

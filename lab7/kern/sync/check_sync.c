@@ -103,10 +103,13 @@ int philosopher_using_semaphore(void * arg) /* i：哲学家号码，从0到N-1 
  * }
  */
 
-struct proc_struct *philosopher_proc_condvar[N]; // N philosopher
+struct proc_struct *philosopher_proc_condvar[N]; // N philosopher N个哲学家进程
 int state_condvar[N];                            // the philosopher's state: EATING, HUNGARY, THINKING  
-monitor_t mt, *mtp=&mt;                          // monitor
+monitor_t mt, *mtp=&mt;                          // monitor管程及其指针
 
+/**
+ * 判断一个哲学家能否进入进餐状态，如果可以，则将其状态转化为eating并将其
+ */
 void phi_test_condvar (i) { 
     if(state_condvar[i]==HUNGRY&&state_condvar[LEFT]!=EATING
             &&state_condvar[RIGHT]!=EATING) {
@@ -117,7 +120,12 @@ void phi_test_condvar (i) {
     }
 }
 
-
+/**
+ * 试图获取forks，需要检查自己是否符合获取的条件，
+ * 当条件不符合时，在对应的条件变量队列中等待;
+ * 当条件符合后，进入进餐状态，并退出管程;
+ * @param i
+ */
 void phi_take_forks_condvar(int i) {
      down(&(mtp->mutex));
 //--------into routine in monitor--------------
@@ -125,20 +133,37 @@ void phi_take_forks_condvar(int i) {
      // I am hungry
      // try to get fork
 //--------leave routine in monitor--------------
+      state_condvar[i]=HUNGRY;
+      phi_test_condvar(i);
+      while(state_condvar[i]!=EATING){
+          cond_wait(&(mtp->cv[i]));
+      }
+
       if(mtp->next_count>0)
          up(&(mtp->next));
       else
          up(&(mtp->mutex));
 }
 
+/**
+ * 哲学家放下叉子，会将自己的状态调整为thinking
+ * 放下叉子后，需要去检查邻居是否符合可以进餐的条件，如果符合，需要唤醒邻居
+ * @param i
+ */
 void phi_put_forks_condvar(int i) {
-     down(&(mtp->mutex));
+     down(&(mtp->mutex));//获取管程互斥锁
+
 
 //--------into routine in monitor--------------
      // LAB7 EXERCISE1: YOUR CODE
      // I ate over
      // test left and right neighbors
 //--------leave routine in monitor--------------
+     state_condvar[i]=THINKING;
+
+     phi_test_condvar(LEFT);
+     phi_test_condvar(RIGHT);
+
      if(mtp->next_count>0)
         up(&(mtp->next));
      else
@@ -159,11 +184,11 @@ int philosopher_using_condvar(void * arg) { /* arg is the No. of philosopher 0~N
         /* need two forks, maybe blocked */
         cprintf("Iter %d, No.%d philosopher_condvar is eating\n",iter,i); /* eating*/
         do_sleep(SLEEP_TIME);
-        phi_put_forks_condvar(i); 
+        phi_put_forks_condvar(i);
         /* return two forks back*/
     }
     cprintf("No.%d philosopher_condvar quit\n",i);
-    return 0;    
+    return 0;
 }
 
 void check_sync(void){

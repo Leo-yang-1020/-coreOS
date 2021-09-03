@@ -217,7 +217,7 @@ check_regexps() {
             not=1
         elif [ "x$i" = "x-" ]; then
             reg=1
-#        else
+        else
 #            if [ $reg -ne 0 ]; then
 #                $grep '-E' "^$i\$" $qemu_out > /dev/null
 #            else
@@ -231,15 +231,15 @@ check_regexps() {
 #                    msg="!! error: got unexpected line '$i'"
 #                fi
 #                okay=no
-#                if [ -z "$error" ]; then
-#                    error="$msg"
-#                else
-#                    error="$error\n$msg"
-#                fi
-#            fi
-#            not=0
-#            reg=0
-        fi
+                if [ -z "$error" ]; then
+                    error="$msg"
+                else
+                    error="$error\n$msg"
+                fi
+            fi
+            not=0
+            reg=0
+#        fi
     done
     if [ "$okay" = "yes" ]; then
         pass
