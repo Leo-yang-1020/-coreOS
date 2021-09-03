@@ -172,7 +172,6 @@ void phi_put_forks_condvar(int i) {
 
 //---------- philosophers using monitor (condition variable) ----------------------
 int philosopher_using_condvar(void * arg) { /* arg is the No. of philosopher 0~N-1*/
-  
     int i, iter=0;
     i=(int)arg;
     cprintf("I am No.%d philosopher_condvar\n",i);
